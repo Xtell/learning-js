@@ -5,6 +5,7 @@ type ErrorCallbackFn = (reason: PromiseResult) => void;
 type FinallyCallbackFn = () => void;
 type Executor = (resolve: (value: any) => void, reject: (value: any) => void) => void;
 
+
 class MyPromise {
 
   private _state: PromiseState = 'pending';
@@ -19,7 +20,13 @@ class MyPromise {
       throw new Error('Executor should be a function!');
     }
 
-    executor(this.resolve.bind(this), this.reject.bind(this));
+    try {
+      executor(this.resolve.bind(this), this.reject.bind(this));
+    } catch (error) {
+      this.result = error;
+      this.reject.call(this, error)
+    }
+
   }
 
   set state(newState: PromiseState) {
@@ -79,6 +86,7 @@ class MyPromise {
     this.state = 'fulfilled';
     this.result = result;
     this.onFullfilled();
+    this.onFinally();
   }
 
   private reject(reason: PromiseResult) {
@@ -88,62 +96,61 @@ class MyPromise {
 
     this.state = 'rejected';
     this.result = reason;
-    this.onRejected()
+    this.onRejected();
+    this.onFinally();
   }
 
-  private onFullfilled(cb?: SuccessCallbackFn) {
+  private onFullfilled() {
     setTimeout(() => {
-
-      if (cb) {
-        cb(this.result)
-      } else {
-        this.successCallbacks.forEach((cb) => {
-          if (cb) {
-            cb(this.result)
-          }
-        })
-        this.onFinally();
-      }
+      this.successCallbacks.forEach((cb) => {
+        if (cb) {
+          cb(this.result)
+        }
+      })
     })
   }
 
-  private onRejected(cb?: ErrorCallbackFn) {
+  private onRejected() {
     setTimeout(() => {
-      if (cb) {
-        cb(this.result)
-      }
-      else {
-        this.errorCallbacks.forEach((cb) => {
-          if (typeof cb === 'function') {
-            cb(this.result)
-          }
-        })
-        this.onFinally();
-      }
+      this.errorCallbacks.forEach((cb) => {
+        if (typeof cb === 'function') {
+          cb(this.result)
+        }
+      })
     })
   }
 
   private onFinally() {
-    this.finallyCallbacks.forEach((cb) => {
-      if (typeof cb === "function") {
-        cb()
-      }
+    setTimeout(() => {
+      this.finallyCallbacks.forEach((cb) => {
+        if (typeof cb === "function") {
+          cb()
+        }
+      })
     })
+
   }
 
   then(onFullfilled?: (value: any) => void, onRejected?: (value: any) => void) {
-    if (this.state === "fulfilled" && onFullfilled) {
-      this.onFullfilled(onFullfilled)
+
+    if (this.state === 'fulfilled' && onFullfilled) {
+      setTimeout(() => {
+        onFullfilled(this.result)
+      })
+
+      return this;
+    }
+    else if (this.state === 'rejected' && onRejected) {
+      setTimeout(() => {
+        onRejected(this.result)
+      })
+      return this;
     }
 
-    else if (this.state === "rejected" && onRejected) {
-      this.onRejected(onRejected)
-    }
     else {
       this.addSuccessCallback(onFullfilled);
       this.addErrorCallback(onRejected);
     }
-
     return this;
   }
 
@@ -152,18 +159,23 @@ class MyPromise {
   }
 
   finally(onFinally?: () => void) {
-    this.addFinallyCallback(onFinally)
-    return this;
+    if (this.state !== 'pending' && onFinally) {
+      onFinally()
+      return
+    }
+    else {
+      this.addFinallyCallback(onFinally)
+      return this;
+    }
+
   }
 
 }
 
-const promise = new MyPromise((resolve) => {
-  setTimeout(() => resolve("Done!"), 500);
+const promise = new MyPromise((resolve, reject) => {
+  reject("error")
 });
 
 setTimeout(() => {
-  console.log('timeout')
-  promise.then((value) => console.log("First then:", value)).finally(() => {console.log("Funally!")});
-  promise.then((value) => console.log("Second then:", value));
-}, 2000);
+  promise.then(undefined, () => { console.log("error") }).finally(() => console.log("onFinally"))
+}, 1000)

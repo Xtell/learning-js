@@ -8,7 +8,13 @@ var MyPromise = /** @class */ (function () {
         if (typeof executor !== 'function') {
             throw new Error('Executor should be a function!');
         }
-        executor(this.resolve.bind(this), this.reject.bind(this));
+        try {
+            executor(this.resolve.bind(this), this.reject.bind(this));
+        }
+        catch (error) {
+            this.result = error;
+            this.reject.call(this, error);
+        }
     }
     Object.defineProperty(MyPromise.prototype, "state", {
         get: function () {
@@ -73,6 +79,7 @@ var MyPromise = /** @class */ (function () {
         this.state = 'fulfilled';
         this.result = result;
         this.onFullfilled();
+        this.onFinally();
     };
     MyPromise.prototype.reject = function (reason) {
         if (this.state !== 'pending') {
@@ -81,52 +88,51 @@ var MyPromise = /** @class */ (function () {
         this.state = 'rejected';
         this.result = reason;
         this.onRejected();
+        this.onFinally();
     };
-    MyPromise.prototype.onFullfilled = function (cb) {
+    MyPromise.prototype.onFullfilled = function () {
         var _this = this;
         setTimeout(function () {
-            if (cb) {
-                cb(_this.result);
-            }
-            else {
-                _this.successCallbacks.forEach(function (cb) {
-                    if (cb) {
-                        cb(_this.result);
-                    }
-                });
-                _this.onFinally();
-            }
+            _this.successCallbacks.forEach(function (cb) {
+                if (cb) {
+                    cb(_this.result);
+                }
+            });
         });
     };
-    MyPromise.prototype.onRejected = function (cb) {
+    MyPromise.prototype.onRejected = function () {
         var _this = this;
         setTimeout(function () {
-            if (cb) {
-                cb(_this.result);
-            }
-            else {
-                _this.errorCallbacks.forEach(function (cb) {
-                    if (typeof cb === 'function') {
-                        cb(_this.result);
-                    }
-                });
-                _this.onFinally();
-            }
+            _this.errorCallbacks.forEach(function (cb) {
+                if (typeof cb === 'function') {
+                    cb(_this.result);
+                }
+            });
         });
     };
     MyPromise.prototype.onFinally = function () {
-        this.finallyCallbacks.forEach(function (cb) {
-            if (typeof cb === "function") {
-                cb();
-            }
+        var _this = this;
+        setTimeout(function () {
+            _this.finallyCallbacks.forEach(function (cb) {
+                if (typeof cb === "function") {
+                    cb();
+                }
+            });
         });
     };
     MyPromise.prototype.then = function (onFullfilled, onRejected) {
-        if (this.state === "fulfilled" && onFullfilled) {
-            this.onFullfilled(onFullfilled);
+        var _this = this;
+        if (this.state === 'fulfilled' && onFullfilled) {
+            setTimeout(function () {
+                onFullfilled(_this.result);
+            });
+            return this;
         }
-        else if (this.state === "rejected" && onRejected) {
-            this.onRejected(onRejected);
+        else if (this.state === 'rejected' && onRejected) {
+            setTimeout(function () {
+                onRejected(_this.result);
+            });
+            return this;
         }
         else {
             this.addSuccessCallback(onFullfilled);
@@ -138,16 +144,20 @@ var MyPromise = /** @class */ (function () {
         return this.then(undefined, onRejected);
     };
     MyPromise.prototype.finally = function (onFinally) {
-        this.addFinallyCallback(onFinally);
-        return this;
+        if (this.state !== 'pending' && onFinally) {
+            onFinally();
+            return;
+        }
+        else {
+            this.addFinallyCallback(onFinally);
+            return this;
+        }
     };
     return MyPromise;
 }());
-var promise = new MyPromise(function (resolve) {
-    setTimeout(function () { return resolve("Done!"); }, 500);
+var promise = new MyPromise(function (resolve, reject) {
+    reject("error");
 });
 setTimeout(function () {
-    console.log('timeout');
-    promise.then(function (value) { return console.log("First then:", value); }).finally(function () { console.log("Funally!"); });
-    promise.then(function (value) { return console.log("Second then:", value); });
-}, 2000);
+    promise.then(undefined, function () { console.log("error"); }).finally(function () { return console.log("onFinally"); });
+}, 1000);
